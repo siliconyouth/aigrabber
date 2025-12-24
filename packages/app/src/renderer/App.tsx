@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import type { DownloadJob, DownloadProgress } from '@aigrabber/shared';
+import { useEffect, useState } from 'react';
+import type { DownloadJob } from '@aigrabber/shared';
 
 type View = 'downloads' | 'completed' | 'settings';
 

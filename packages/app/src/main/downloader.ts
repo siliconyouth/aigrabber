@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs/promises';
-import { createWriteStream, existsSync } from 'fs';
+import { createWriteStream } from 'fs';
 import got from 'got';
 import {
   generateId,
@@ -11,7 +11,6 @@ import {
   type AudioTrack,
   type DownloadJob,
   type DownloadProgress,
-  type DownloadStatus,
 } from '@aigrabber/shared';
 import { FFmpegManager } from './ffmpeg';
 
@@ -140,15 +139,18 @@ export class Downloader {
           throw new Error(`Unsupported stream type: ${job.stream.type}`);
       }
 
-      if (job.status !== 'cancelled') {
-        job.status = 'completed';
-        job.completedAt = Date.now();
-        this.options.onComplete(jobId, job.outputPath!);
+      // Re-check status in case it was cancelled during download
+      const currentJob = this.jobs.get(jobId);
+      if (currentJob && currentJob.status !== 'cancelled') {
+        currentJob.status = 'completed';
+        currentJob.completedAt = Date.now();
+        this.options.onComplete(jobId, currentJob.outputPath!);
       }
     } catch (error: any) {
-      if (error.name !== 'AbortError' && job.status !== 'cancelled') {
-        job.status = 'failed';
-        job.error = error.message;
+      const currentJob = this.jobs.get(jobId);
+      if (error.name !== 'AbortError' && currentJob && currentJob.status !== 'cancelled') {
+        currentJob.status = 'failed';
+        currentJob.error = error.message;
         this.options.onError(jobId, error.message);
       }
     } finally {
