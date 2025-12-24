@@ -1,0 +1,9 @@
+{
+  "name": "com.aigrabber.app",
+  "description": "AIGrabber Native Messaging Host",
+  "path": "/Users/vladimir/projects/aigrabber/packages/app/native-host/aigrabber-host.sh",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://*/"
+  ]
+}
