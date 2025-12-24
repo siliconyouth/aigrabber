@@ -142,8 +142,8 @@ function handleMessage(
 ): boolean | void {
   switch (message.type) {
     case 'GET_DOWNLOADS':
-      // Get current tab's streams
-      const tabId = sender.tab?.id;
+      // Get current tab's streams - use tabId from message (popup) or sender.tab.id (content script)
+      const tabId = (message as any).tabId || sender.tab?.id;
       if (tabId) {
         const streams = tabStreams.get(tabId) || [];
         sendResponse({ streams });

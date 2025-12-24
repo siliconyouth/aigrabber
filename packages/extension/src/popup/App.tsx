@@ -79,7 +79,11 @@ export function App() {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       if (!tab?.id) return;
 
-      const response = await browser.runtime.sendMessage({ type: 'GET_DOWNLOADS' });
+      // Send tab ID so background can look up streams
+      const response = await browser.runtime.sendMessage({
+        type: 'GET_DOWNLOADS',
+        tabId: tab.id
+      });
       if (response?.streams) {
         setStreams(response.streams.map((s: DetectedStream) => ({
           ...s,
