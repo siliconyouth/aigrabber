@@ -1,5 +1,5 @@
 // Stream types
-export type StreamType = 'hls' | 'dash' | 'direct' | 'unknown';
+export type StreamType = 'hls' | 'dash' | 'direct' | 'ytdlp' | 'unknown';
 export type StreamProtection = 'none' | 'drm' | 'unknown';
 
 export interface VideoQuality {

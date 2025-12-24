@@ -46,7 +46,7 @@ function handleRequest(details: browser.WebRequest.OnBeforeRequestDetailsType) {
   }
 }
 
-// Handle tab navigation - clear old streams
+// Handle tab navigation - clear old streams and detect yt-dlp pages
 function handleTabUpdate(
   tabId: number,
   changeInfo: browser.Tabs.OnUpdatedChangeInfoType,
@@ -55,7 +55,27 @@ function handleTabUpdate(
   if (changeInfo.status === 'loading') {
     // Clear streams when navigating to a new page
     tabStreams.delete(tabId);
+    detector.clearYtdlpCache();
     updateBadge(tabId, 0);
+  }
+
+  // When page is complete, check for yt-dlp supported sites
+  if (changeInfo.status === 'complete' && tab.url && tab.title) {
+    const ytdlpStream = detector.detectYtdlpPage(tab.url, tab.title);
+    if (ytdlpStream) {
+      if (!tabStreams.has(tabId)) {
+        tabStreams.set(tabId, []);
+      }
+      tabStreams.get(tabId)!.push(ytdlpStream);
+      updateBadge(tabId, tabStreams.get(tabId)!.length);
+
+      // Notify popup
+      browser.runtime.sendMessage({
+        type: 'STREAM_DETECTED',
+        stream: ytdlpStream,
+        timestamp: Date.now(),
+      }).catch(() => {});
+    }
   }
 }
 

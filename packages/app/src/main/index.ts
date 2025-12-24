@@ -3,7 +3,9 @@ import path from 'path';
 import { Downloader } from './downloader';
 import { NativeMessagingHost } from './native-host';
 import { FFmpegManager } from './ffmpeg';
+import { YtdlpManager } from './ytdlp';
 import Store from 'electron-store';
+import { generateId, type DownloadJob, type DetectedStream, type VideoQuality } from '@aigrabber/shared';
 
 // Store for app settings
 const store = new Store({
@@ -18,6 +20,7 @@ let mainWindow: BrowserWindow | null = null;
 let downloader: Downloader | null = null;
 let nativeHost: NativeMessagingHost | null = null;
 let ffmpegManager: FFmpegManager | null = null;
+let ytdlpManager: YtdlpManager | null = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -60,6 +63,17 @@ async function initialize() {
 
   if (!ffmpegReady) {
     console.warn('FFmpeg not found. Some features will be limited.');
+  }
+
+  // Initialize yt-dlp manager
+  ytdlpManager = new YtdlpManager();
+  const ytdlpReady = await ytdlpManager.initialize();
+
+  if (ytdlpReady) {
+    const version = await ytdlpManager.getVersion();
+    console.log('[AIGrabber] yt-dlp ready, version:', version);
+  } else {
+    console.warn('yt-dlp not found. YouTube downloads will be unavailable.');
   }
 
   // Initialize downloader
@@ -122,15 +136,20 @@ function handleNativeMessage(message: any) {
       break;
 
     case 'DOWNLOAD_REQUEST':
-      if (downloader && message.stream && message.quality) {
-        const jobId = downloader.startDownload(message.stream, message.quality, message.audio);
-        nativeHost?.sendMessage({
-          type: 'DOWNLOAD_PROGRESS',
-          jobId,
-          progress: { percentage: 0, downloadedBytes: 0, totalBytes: 0, speed: 0, eta: 0 },
-          status: 'pending',
-          timestamp: Date.now(),
-        });
+      if (message.stream && message.quality) {
+        // Check if this is a yt-dlp stream
+        if (message.stream.type === 'ytdlp' && ytdlpManager?.isAvailable()) {
+          handleYtdlpDownload(message.stream, message.quality);
+        } else if (downloader) {
+          const jobId = downloader.startDownload(message.stream, message.quality, message.audio);
+          nativeHost?.sendMessage({
+            type: 'DOWNLOAD_PROGRESS',
+            jobId,
+            progress: { percentage: 0, downloadedBytes: 0, totalBytes: 0, speed: 0, eta: 0 },
+            status: 'pending',
+            timestamp: Date.now(),
+          });
+        }
       }
       break;
 
@@ -139,6 +158,65 @@ function handleNativeMessage(message: any) {
         downloader?.cancelDownload(message.jobId);
       }
       break;
+  }
+}
+
+// Handle yt-dlp downloads
+async function handleYtdlpDownload(stream: DetectedStream, quality: VideoQuality) {
+  if (!ytdlpManager) return;
+
+  const jobId = generateId();
+  const downloadPath = store.get('downloadPath') as string;
+
+  // Send initial progress
+  nativeHost?.sendMessage({
+    type: 'DOWNLOAD_PROGRESS',
+    jobId,
+    progress: { percentage: 0, downloadedBytes: 0, totalBytes: 0, speed: 0, eta: 0 },
+    status: 'pending',
+    timestamp: Date.now(),
+  });
+
+  mainWindow?.webContents.send('download-progress', {
+    jobId,
+    progress: { percentage: 0, downloadedBytes: 0, totalBytes: 0, speed: 0, eta: 0 },
+  });
+
+  try {
+    const outputPath = await ytdlpManager.download(
+      stream.url,
+      downloadPath,
+      quality,
+      (progress) => {
+        nativeHost?.sendMessage({
+          type: 'DOWNLOAD_PROGRESS',
+          jobId,
+          progress,
+          status: 'downloading',
+          timestamp: Date.now(),
+        });
+        mainWindow?.webContents.send('download-progress', { jobId, progress });
+      }
+    );
+
+    // Success
+    nativeHost?.sendMessage({
+      type: 'DOWNLOAD_COMPLETE',
+      jobId,
+      outputPath,
+      timestamp: Date.now(),
+    });
+    mainWindow?.webContents.send('download-complete', { jobId, outputPath });
+
+  } catch (error: any) {
+    // Error
+    nativeHost?.sendMessage({
+      type: 'DOWNLOAD_ERROR',
+      jobId,
+      error: error.message,
+      timestamp: Date.now(),
+    });
+    mainWindow?.webContents.send('download-error', { jobId, error: error.message });
   }
 }
 
@@ -202,6 +280,7 @@ function setupIPC() {
     return {
       version: app.getVersion(),
       ffmpegAvailable: ffmpegManager?.isAvailable() || false,
+      ytdlpAvailable: ytdlpManager?.isAvailable() || false,
       downloadPath: store.get('downloadPath'),
     };
   });

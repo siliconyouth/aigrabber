@@ -14,8 +14,108 @@ import {
   type HLSMasterPlaylist,
 } from '@aigrabber/shared';
 
+// Sites supported by yt-dlp
+const YTDLP_SUPPORTED_DOMAINS = [
+  'youtube.com',
+  'youtu.be',
+  'vimeo.com',
+  'dailymotion.com',
+  'twitter.com',
+  'x.com',
+  'facebook.com',
+  'instagram.com',
+  'tiktok.com',
+  'twitch.tv',
+  'reddit.com',
+  'soundcloud.com',
+];
+
 export class StreamDetector {
   private manifestCache = new Map<string, string>();
+  private detectedYtdlpUrls = new Set<string>();
+
+  /**
+   * Check if URL is from a yt-dlp supported site
+   */
+  isYtdlpSupported(url: string): boolean {
+    try {
+      const urlObj = new URL(url);
+      return YTDLP_SUPPORTED_DOMAINS.some(domain =>
+        urlObj.hostname.includes(domain)
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Detect video page for yt-dlp supported sites
+   */
+  detectYtdlpPage(pageUrl: string, pageTitle: string): DetectedStream | null {
+    if (!this.isYtdlpSupported(pageUrl)) {
+      return null;
+    }
+
+    // Avoid duplicates
+    if (this.detectedYtdlpUrls.has(pageUrl)) {
+      return null;
+    }
+
+    // Check if it's a video page (not homepage/search)
+    try {
+      const urlObj = new URL(pageUrl);
+
+      // YouTube video detection
+      if (urlObj.hostname.includes('youtube.com')) {
+        if (!urlObj.pathname.includes('/watch') && !urlObj.pathname.includes('/shorts')) {
+          return null;
+        }
+      }
+
+      // Vimeo video detection
+      if (urlObj.hostname.includes('vimeo.com')) {
+        if (!/\/\d+/.test(urlObj.pathname)) {
+          return null;
+        }
+      }
+
+      // Twitter/X video detection
+      if (urlObj.hostname.includes('twitter.com') || urlObj.hostname.includes('x.com')) {
+        if (!urlObj.pathname.includes('/status/')) {
+          return null;
+        }
+      }
+    } catch {
+      return null;
+    }
+
+    this.detectedYtdlpUrls.add(pageUrl);
+
+    return {
+      id: generateId(),
+      url: pageUrl,
+      type: 'ytdlp' as StreamType,
+      protection: 'none',
+      qualities: [
+        { width: 3840, height: 2160, label: '4K' },
+        { width: 1920, height: 1080, label: '1080p' },
+        { width: 1280, height: 720, label: '720p' },
+        { width: 854, height: 480, label: '480p' },
+      ],
+      audioTracks: [],
+      pageUrl,
+      pageTitle,
+      title: pageTitle,
+      detectedAt: Date.now(),
+    };
+  }
+
+  /**
+   * Clear detected yt-dlp URLs (call on tab navigation)
+   */
+  clearYtdlpCache(): void {
+    this.detectedYtdlpUrls.clear();
+  }
 
   /**
    * Detect stream type from URL and request type
